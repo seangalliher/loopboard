@@ -1,4 +1,12 @@
-import { addCard, createBoard, deleteCard, moveCard, updateCard } from '../board/board'
+import {
+  addCard,
+  createBoard,
+  deleteCard,
+  isOverLimit,
+  moveCard,
+  setWipLimit,
+  updateCard,
+} from '../board/board'
 import type { Board, Card, ColumnId } from '../board/board'
 import { parseBoard, serializeBoard } from '../board/serialize'
 import { newId } from '../id'
@@ -11,6 +19,16 @@ const COLUMNS: { id: ColumnId; title: string }[] = [
 ]
 
 type Child = Node | string
+
+interface ColumnView {
+  section: HTMLElement
+  count: HTMLElement
+  limitInput: HTMLInputElement
+  limitError: HTMLElement
+  list: HTMLElement
+  status: HTMLElement // the over-limit warning; empty when not over the limit
+  cards: Card[] | null // the cards array the list was last built from
+}
 
 /** Builds an element. Text children become text nodes, never HTML. */
 function h<K extends keyof HTMLElementTagNameMap>(
@@ -39,8 +57,9 @@ function today(): string {
 export function mountApp(root: HTMLElement, storage: Storage | null): void {
   let board: Board = storage ? loadBoard(storage) : createBoard()
   let editingId: string | null = null // null: the form adds a card
-  let cardEls = new Map<string, { li: HTMLElement; edit: HTMLElement }>()
-  let headingEls = new Map<ColumnId, HTMLElement>()
+  const cardEls = new Map<string, { li: HTMLElement; edit: HTMLElement }>()
+  const headingEls = new Map<ColumnId, HTMLElement>()
+  const views = new Map<ColumnId, ColumnView>()
   let dragging: { id: string; from: ColumnId } | null = null
 
   const addButton = h('button', { type: 'button' }, 'Add card')
@@ -93,6 +112,12 @@ export function mountApp(root: HTMLElement, storage: Storage | null): void {
     statusEl,
   )
 
+  for (const column of COLUMNS) {
+    const view = createColumn(column)
+    views.set(column.id, view)
+    boardEl.append(view.section)
+  }
+
   function setBoard(next: Board): void {
     board = next
     render()
@@ -106,41 +131,96 @@ export function mountApp(root: HTMLElement, storage: Storage | null): void {
     }
   }
 
-  function render(): void {
-    cardEls = new Map()
-    headingEls = new Map()
-    boardEl.replaceChildren(
-      ...COLUMNS.map(({ id, title }) => {
-        const { cards } = board.columns[id]
-        const heading = h('h2', { id: `column-${id}`, tabindex: '-1' }, title)
-        headingEls.set(id, heading)
-        const count = `${cards.length} ${cards.length === 1 ? 'card' : 'cards'}`
-        const section = h(
-          'section',
-          { class: 'column', 'aria-labelledby': heading.id },
-          h('div', { class: 'column-head' }, heading, h('span', { class: 'count' }, count)),
-          h('ul', { class: 'cards' }, ...cards.map((card) => renderCard(card, id))),
-        )
-        // Only another column accepts the dragged card; its own column does not.
-        section.addEventListener('dragover', (event) => {
-          if (!dragging || dragging.from === id) return
-          event.preventDefault()
-          section.classList.add('drop-target')
-        })
-        section.addEventListener('dragleave', (event) => {
-          if (!(event.relatedTarget instanceof Node && section.contains(event.relatedTarget))) {
-            section.classList.remove('drop-target')
-          }
-        })
-        section.addEventListener('drop', (event) => {
-          event.preventDefault()
-          const moved = dragging
-          endDrag()
-          if (moved && moved.from !== id) setBoard(moveCard(board, moved.id, id))
-        })
-        return section
-      }),
+  /** A column's controls are built once; render() only updates them, so editing a limit never replaces a control. */
+  function createColumn({ id, title }: { id: ColumnId; title: string }): ColumnView {
+    const heading = h('h2', { id: `column-${id}`, tabindex: '-1' }, title)
+    const count = h('span', { class: 'count' })
+    const limitInput = h('input', {
+      id: `wip-${id}`,
+      type: 'text',
+      inputmode: 'numeric',
+      autocomplete: 'off',
+      'aria-label': `${title} WIP limit`,
+      'aria-describedby': `wip-error-${id}`,
+    })
+    const limitError = h('p', { id: `wip-error-${id}`, class: 'error wip-error', role: 'alert' })
+    const status = h('p', { class: 'over-limit-text', role: 'status' })
+    const list = h('ul', { class: 'cards' })
+    const section = h(
+      'section',
+      { class: 'column', 'aria-labelledby': heading.id },
+      h(
+        'div',
+        { class: 'column-head' },
+        heading,
+        count,
+        h('label', { class: 'wip-limit' }, 'WIP limit ', limitInput),
+      ),
+      limitError,
+      status,
+      list,
     )
+    limitInput.addEventListener('change', () => {
+      // The raw text decides: only an empty entry clears the limit; anything but digits is rejected.
+      const text = limitInput.value.trim()
+      try {
+        setBoard(setWipLimit(board, id, text === '' ? null : /^\d+$/.test(text) ? Number(text) : NaN))
+      } catch (error) {
+        const previous = board.columns[id].wipLimit
+        limitInput.value = previous === null ? '' : String(previous)
+        limitError.textContent = error instanceof Error ? error.message : String(error)
+      }
+    })
+    // Only another column accepts the dragged card; its own column does not.
+    section.addEventListener('dragover', (event) => {
+      if (!dragging || dragging.from === id) return
+      event.preventDefault()
+      section.classList.add('drop-target')
+    })
+    section.addEventListener('dragleave', (event) => {
+      if (!(event.relatedTarget instanceof Node && section.contains(event.relatedTarget))) {
+        section.classList.remove('drop-target')
+      }
+    })
+    section.addEventListener('drop', (event) => {
+      // Text dropped on the limit input goes to the field; the change handler validates it.
+      if (!dragging && event.target === limitInput) return
+      event.preventDefault()
+      const moved = dragging
+      endDrag()
+      if (moved && moved.from !== id) setBoard(moveCard(board, moved.id, id))
+    })
+    headingEls.set(id, heading)
+    return { section, count, limitInput, limitError, list, status, cards: null }
+  }
+
+  function render(): void {
+    // Every column's view is created before the first render.
+    const changed = COLUMNS.filter(({ id }) => views.get(id)!.cards !== board.columns[id].cards)
+    // Forget the old cards first: a moved card is registered by its new column below.
+    for (const { id } of changed) {
+      for (const card of views.get(id)!.cards ?? []) cardEls.delete(card.id)
+    }
+    for (const { id } of COLUMNS) {
+      const view = views.get(id)!
+      const { cards, wipLimit } = board.columns[id]
+      const countText =
+        wipLimit === null
+          ? `${cards.length} ${cards.length === 1 ? 'card' : 'cards'}`
+          : `${cards.length}/${wipLimit} cards`
+      if (view.count.textContent !== countText) view.count.textContent = countText
+      const limitText = wipLimit === null ? '' : String(wipLimit)
+      if (view.limitInput.value !== limitText) view.limitInput.value = limitText
+      view.limitError.textContent = ''
+      const over = isOverLimit(board, id)
+      view.section.classList.toggle('over-limit', over)
+      const statusText = over ? `⚠ Over WIP limit by ${cards.length - (wipLimit ?? 0)}` : ''
+      if (view.status.textContent !== statusText) view.status.textContent = statusText
+      if (view.cards !== cards) {
+        view.list.replaceChildren(...cards.map((card) => renderCard(card, id)))
+        view.cards = cards
+      }
+    }
   }
 
   function endDrag(): void {

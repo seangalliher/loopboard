@@ -119,9 +119,13 @@ export function moveCard(board: Board, id: string, target: ColumnId): Board {
   return withCards(withoutCard, target, [...withoutCard.columns[target].cards, found.card])
 }
 
+export const MAX_WIP_LIMIT = 999
+
 export function setWipLimit(board: Board, column: ColumnId, limit: number | null): Board {
-  if (limit !== null && !(Number.isInteger(limit) && limit >= 1)) {
-    throw new Error('WIP limit must be a whole number of at least 1, or null for no limit.')
+  if (limit !== null && !(Number.isInteger(limit) && limit >= 1 && limit <= MAX_WIP_LIMIT)) {
+    throw new Error(
+      `WIP limit must be a whole number from 1 to ${MAX_WIP_LIMIT}, or null for no limit.`,
+    )
   }
   return {
     ...board,

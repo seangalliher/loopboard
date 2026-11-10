@@ -120,10 +120,21 @@ describe('parseBoard', () => {
     expect(() => parse(d)).toThrow('Column "done", card 1: duplicate card id "a".')
   })
 
-  it.each([0, -1, 1.5, '3'])('rejects a wipLimit of %j', (wipLimit) => {
+  it.each([0, -1, 1.5, '3', 1000, 10000000000000000000])(
+    'rejects a wipLimit of %j',
+    (wipLimit) => {
+      const d = data()
+      d.columns.todo.wipLimit = wipLimit
+      expect(() => parse(d)).toThrow(
+        'Column "todo": WIP limit must be a whole number from 1 to 999, or null for no limit.',
+      )
+    },
+  )
+
+  it('accepts a wipLimit of 999', () => {
     const d = data()
-    d.columns.todo.wipLimit = wipLimit
-    expect(() => parse(d)).toThrow(/Column "todo": WIP limit must be a whole number/)
+    d.columns.todo.wipLimit = 999
+    expect(parse(d).columns.todo.wipLimit).toBe(999)
   })
 
   it('rejects a missing wipLimit', () => {

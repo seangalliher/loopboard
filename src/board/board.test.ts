@@ -150,8 +150,15 @@ describe('setWipLimit', () => {
     expect(ids(setWipLimit(sampleBoard(), 'todo', 5), 'todo')).toEqual(['a', 'b'])
   })
 
-  it.each([0, -1, 1.5, NaN])('rejects %s', (n) => {
-    expect(() => setWipLimit(createBoard(), 'todo', n)).toThrow(/WIP limit/)
+  it('accepts 1 and 999', () => {
+    expect(setWipLimit(createBoard(), 'todo', 1).columns.todo.wipLimit).toBe(1)
+    expect(setWipLimit(createBoard(), 'todo', 999).columns.todo.wipLimit).toBe(999)
+  })
+
+  it.each([0, -1, 1.5, NaN, 1000, 10000000000000000000, Infinity])('rejects %s', (n) => {
+    expect(() => setWipLimit(createBoard(), 'todo', n)).toThrow(
+      'WIP limit must be a whole number from 1 to 999, or null for no limit.',
+    )
   })
 })
 

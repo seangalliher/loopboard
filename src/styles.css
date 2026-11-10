@@ -63,8 +63,34 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+html {
+  /* --notices-height is set from the notices' measured height (app.ts); the extra gaps sit above and below them. */
+  scroll-padding-bottom: calc(var(--notices-height, 0px) + 2 * var(--gap)); /* keeps a focused control clear of the notices */
+}
+
 main {
-  padding: 0 var(--gap) var(--gap);
+  padding: 0 var(--gap) calc(var(--notices-height, 0px) + 2 * var(--gap)); /* room to scroll the last controls above the notices */
+}
+
+/* Out of flow, so a message appearing or disappearing never moves a control; it does not take clicks either. */
+.notices {
+  position: fixed;
+  right: var(--gap);
+  bottom: var(--gap);
+  left: var(--gap);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 30rem;
+  pointer-events: none;
+}
+
+.notices .error {
+  padding: 0.5rem 0.75rem;
+  border: 0.0625rem solid var(--color-danger);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  overflow-wrap: anywhere;
 }
 
 button {
@@ -140,10 +166,47 @@ textarea {
 
 .column-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem;
   margin-bottom: 0.75rem;
+}
+
+.wip-limit {
+  display: flex;
+  flex-basis: 100%; /* its own row, so a longer count text cannot make it wrap and shift the cards */
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.wip-limit input {
+  width: 4.5rem;
+  min-height: 2.75rem;
+}
+
+.column.over-limit {
+  /* The thicker border takes its extra width out of the padding, so the content does not move. */
+  padding: calc(var(--gap) - 0.1875rem);
+  border: 0.25rem double var(--color-danger);
+}
+
+/* Always present, with room for the message: showing it must not move the controls under the pointer. */
+.wip-error {
+  min-height: 4.2em;
+  margin-bottom: 0.25rem;
+}
+
+/* Always present; the reserved line keeps the cards from shifting when the text appears. */
+.over-limit-text {
+  min-height: 1.5em;
+  margin: 0 0 0.75rem;
+  line-height: 1.5;
+}
+
+.over-limit .over-limit-text {
+  color: var(--color-danger);
+  font-weight: 700;
 }
 
 .count,

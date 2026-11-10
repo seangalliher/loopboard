@@ -2,6 +2,7 @@
 
 A small kanban board built with Vite and TypeScript.
 
+Live site: https://seangalliher.github.io/loopboard/ (deployed from `main` by GitHub Pages)
 ## Commands
 
 Node `^22.13.0 || ^24.0.0 || >=26.0.0` is required.

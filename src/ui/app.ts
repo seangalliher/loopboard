@@ -1,6 +1,8 @@
 import { addCard, createBoard, deleteCard, updateCard } from '../board/board'
 import type { Board, Card, ColumnId } from '../board/board'
+import { parseBoard, serializeBoard } from '../board/serialize'
 import { newId } from '../id'
+import { loadBoard, saveBoard } from '../storage'
 
 const COLUMNS: { id: ColumnId; title: string }[] = [
   { id: 'todo', title: 'To do' },
@@ -26,8 +28,16 @@ function field(label: string, control: HTMLElement): HTMLElement {
   return h('div', { class: 'field' }, h('label', { for: control.id }, label), control)
 }
 
-export function mountApp(root: HTMLElement): void {
-  let board: Board = createBoard()
+/** Local date as YYYY-MM-DD, for the export file name. */
+function today(): string {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
+
+/** `storage` is null when the browser does not allow storage; the board then lives in memory. */
+export function mountApp(root: HTMLElement, storage: Storage | null): void {
+  let board: Board = storage ? loadBoard(storage) : createBoard()
   let editingId: string | null = null // null: the form adds a card
   let cardEls = new Map<string, { li: HTMLElement; edit: HTMLElement }>()
   let headingEls = new Map<ColumnId, HTMLElement>()
@@ -55,11 +65,42 @@ export function mountApp(root: HTMLElement): void {
     h('div', { class: 'actions' }, h('button', { type: 'submit' }, 'Save'), cancelButton),
   )
   const boardEl = h('div', { class: 'board' })
-  root.append(h('header', {}, h('h1', {}, 'LoopBoard'), addButton), h('main', {}, form, boardEl))
+  const exportButton = h('button', { type: 'button' }, 'Export')
+  const importInput = h('input', { id: 'import-file', type: 'file', accept: '.json,application/json' })
+  const messageEl = h('p', { class: 'error', role: 'alert', hidden: '' })
+  const saveWarningEl = h(
+    'p',
+    { class: 'error', role: 'alert', hidden: '' },
+    'Could not save the board in this browser. Export it to keep a copy.',
+  )
+  root.append(
+    h(
+      'header',
+      {},
+      h('h1', {}, 'LoopBoard'),
+      h(
+        'div',
+        { class: 'actions' },
+        addButton,
+        exportButton,
+        h('label', { for: importInput.id }, 'Import a board file (replaces the current board)'),
+        importInput,
+      ),
+    ),
+    h('main', {}, saveWarningEl, messageEl, form, boardEl),
+  )
 
   function setBoard(next: Board): void {
     board = next
     render()
+    messageEl.hidden = true
+    try {
+      if (!storage) throw new Error('storage unavailable')
+      saveBoard(storage, board)
+      saveWarningEl.hidden = true
+    } catch {
+      saveWarningEl.hidden = false
+    }
   }
 
   function render(): void {
@@ -131,6 +172,28 @@ export function mountApp(root: HTMLElement): void {
     target?.focus()
   }
 
+  exportButton.addEventListener('click', () => {
+    const url = URL.createObjectURL(new Blob([serializeBoard(board)], { type: 'application/json' }))
+    const link = h('a', { href: url, download: `loopboard-${today()}.json` })
+    document.body.append(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  })
+  importInput.addEventListener('change', async () => {
+    const file = importInput.files?.[0]
+    if (!file) return
+    // Clear the input so choosing the same file again fires another change event.
+    importInput.value = ''
+    try {
+      const next = parseBoard(await file.text())
+      hideForm()
+      setBoard(next)
+    } catch (error) {
+      messageEl.textContent = `Import failed: ${error instanceof Error ? error.message : String(error)}`
+      messageEl.hidden = false
+    }
+  })
   addButton.addEventListener('click', () => openForm())
   cancelButton.addEventListener('click', closeForm)
   document.addEventListener('keydown', (event) => {
@@ -156,4 +219,5 @@ export function mountApp(root: HTMLElement): void {
   })
 
   render()
+  saveWarningEl.hidden = storage !== null
 }

@@ -55,7 +55,8 @@ export function normalizeCardFields(fields: CardFields): CardFields {
   if (fields.due !== undefined && typeof fields.due !== 'string') {
     throw new Error('Due date must be a string.')
   }
-  const title = fields.title.trim()
+  // The title field is a single-line input, which would strip line breaks on edit.
+  const title = fields.title.replace(/[\r\n]+/g, ' ').trim()
   if (title === '') throw new Error('Title must not be blank.')
   const result: CardFields = { title }
   const note = fields.note?.trim()

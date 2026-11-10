@@ -171,6 +171,27 @@ textarea {
   background: var(--color-bg);
 }
 
+.card.dragging {
+  opacity: 0.5;
+  border-style: dashed;
+}
+
+.column.drop-target {
+  border-color: var(--color-accent);
+  outline: 0.1875rem dashed var(--color-accent);
+  outline-offset: -0.1875rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 0.0625rem;
+  height: 0.0625rem;
+  margin: -0.0625rem;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .card p {
   margin: 0;
 }

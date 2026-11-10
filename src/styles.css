@@ -140,10 +140,47 @@ textarea {
 
 .column-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem;
   margin-bottom: 0.75rem;
+}
+
+.wip-limit {
+  display: flex;
+  flex-basis: 100%; /* its own row, so a longer count text cannot make it wrap and shift the cards */
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.wip-limit input {
+  width: 4.5rem;
+  min-height: 2.75rem;
+}
+
+.column.over-limit {
+  /* The thicker border takes its extra width out of the padding, so the content does not move. */
+  padding: calc(var(--gap) - 0.1875rem);
+  border: 0.25rem double var(--color-danger);
+}
+
+/* Always present, with room for the message: showing it must not move the controls under the pointer. */
+.wip-error {
+  min-height: 4.2em;
+  margin-bottom: 0.25rem;
+}
+
+/* Always present; the reserved line keeps the cards from shifting when the text appears. */
+.over-limit-text {
+  min-height: 1.5em;
+  margin: 0 0 0.75rem;
+  line-height: 1.5;
+}
+
+.over-limit .over-limit-text {
+  color: var(--color-danger);
+  font-weight: 700;
 }
 
 .count,

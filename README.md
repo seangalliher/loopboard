@@ -13,5 +13,5 @@ Node `^22.13.0 || ^24.0.0 || >=26.0.0` is required.
 | `npm run dev` | Start the dev server |
 | `npm run lint` | Lint the repo with ESLint |
 | `npm test` | Type-check (`tsc --noEmit`), lint, then run all unit tests (`vitest run`) |
-| `npx vitest run <file>` | Run the tests in one file, e.g. `npx vitest run src/sanity.test.ts` |
+| `npx vitest run <file>` | Run the tests in one file, e.g. `npx vitest run src/board/board.test.ts` |
 | `npm run build` | Type-check, then build the site into `dist/` |

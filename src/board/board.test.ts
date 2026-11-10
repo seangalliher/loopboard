@@ -182,6 +182,15 @@ describe('normalizeCardFields', () => {
     expect(() => normalizeCardFields({ title })).toThrow(/Title/)
   })
 
+  it('replaces each run of line breaks in the title with one space', () => {
+    expect(normalizeCardFields({ title: 'First\nSecond' }).title).toBe('First Second')
+    expect(normalizeCardFields({ title: '\nA\r\n\r\nB\r' }).title).toBe('A B')
+  })
+
+  it('rejects a title that is only line breaks', () => {
+    expect(() => normalizeCardFields({ title: '\n\r\n' })).toThrow(/Title must not be blank/)
+  })
+
   it.each(['2026-02-30', '2026-2-3', '2026-13-01', '2026-00-10', '2023-02-29', 'tomorrow'])(
     'rejects the due date %s',
     (due) => {

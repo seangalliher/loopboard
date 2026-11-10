@@ -1,6 +1,8 @@
-import { addCard, createBoard, deleteCard, updateCard } from '../board/board'
+import { addCard, createBoard, deleteCard, moveCard, updateCard } from '../board/board'
 import type { Board, Card, ColumnId } from '../board/board'
+import { parseBoard, serializeBoard } from '../board/serialize'
 import { newId } from '../id'
+import { loadBoard, saveBoard } from '../storage'
 
 const COLUMNS: { id: ColumnId; title: string }[] = [
   { id: 'todo', title: 'To do' },
@@ -26,11 +28,20 @@ function field(label: string, control: HTMLElement): HTMLElement {
   return h('div', { class: 'field' }, h('label', { for: control.id }, label), control)
 }
 
-export function mountApp(root: HTMLElement): void {
-  let board: Board = createBoard()
+/** Local date as YYYY-MM-DD, for the export file name. */
+function today(): string {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
+
+/** `storage` is null when the browser does not allow storage; the board then lives in memory. */
+export function mountApp(root: HTMLElement, storage: Storage | null): void {
+  let board: Board = storage ? loadBoard(storage) : createBoard()
   let editingId: string | null = null // null: the form adds a card
   let cardEls = new Map<string, { li: HTMLElement; edit: HTMLElement }>()
   let headingEls = new Map<ColumnId, HTMLElement>()
+  let dragging: { id: string; from: ColumnId } | null = null
 
   const addButton = h('button', { type: 'button' }, 'Add card')
   const formHeading = h('h2', { id: 'form-heading' })
@@ -55,11 +66,44 @@ export function mountApp(root: HTMLElement): void {
     h('div', { class: 'actions' }, h('button', { type: 'submit' }, 'Save'), cancelButton),
   )
   const boardEl = h('div', { class: 'board' })
-  root.append(h('header', {}, h('h1', {}, 'LoopBoard'), addButton), h('main', {}, form, boardEl))
+  const exportButton = h('button', { type: 'button' }, 'Export')
+  const importInput = h('input', { id: 'import-file', type: 'file', accept: '.json,application/json' })
+  const messageEl = h('p', { class: 'error', role: 'alert', hidden: '' })
+  const saveWarningEl = h(
+    'p',
+    { class: 'error', role: 'alert', hidden: '' },
+    'Could not save the board in this browser. Export it to keep a copy.',
+  )
+  const statusEl = h('p', { class: 'visually-hidden', role: 'status' })
+  root.append(
+    h(
+      'header',
+      {},
+      h('h1', {}, 'LoopBoard'),
+      h(
+        'div',
+        { class: 'actions' },
+        addButton,
+        exportButton,
+        h('label', { for: importInput.id }, 'Import a board file (replaces the current board)'),
+        importInput,
+      ),
+    ),
+    h('main', {}, saveWarningEl, messageEl, form, boardEl),
+    statusEl,
+  )
 
   function setBoard(next: Board): void {
     board = next
     render()
+    messageEl.hidden = true
+    try {
+      if (!storage) throw new Error('storage unavailable')
+      saveBoard(storage, board)
+      saveWarningEl.hidden = true
+    } catch {
+      saveWarningEl.hidden = false
+    }
   }
 
   function render(): void {
@@ -71,28 +115,77 @@ export function mountApp(root: HTMLElement): void {
         const heading = h('h2', { id: `column-${id}`, tabindex: '-1' }, title)
         headingEls.set(id, heading)
         const count = `${cards.length} ${cards.length === 1 ? 'card' : 'cards'}`
-        return h(
+        const section = h(
           'section',
           { class: 'column', 'aria-labelledby': heading.id },
           h('div', { class: 'column-head' }, heading, h('span', { class: 'count' }, count)),
-          h('ul', { class: 'cards' }, ...cards.map(renderCard)),
+          h('ul', { class: 'cards' }, ...cards.map((card) => renderCard(card, id))),
         )
+        // Only another column accepts the dragged card; its own column does not.
+        section.addEventListener('dragover', (event) => {
+          if (!dragging || dragging.from === id) return
+          event.preventDefault()
+          section.classList.add('drop-target')
+        })
+        section.addEventListener('dragleave', (event) => {
+          if (!(event.relatedTarget instanceof Node && section.contains(event.relatedTarget))) {
+            section.classList.remove('drop-target')
+          }
+        })
+        section.addEventListener('drop', (event) => {
+          event.preventDefault()
+          const moved = dragging
+          endDrag()
+          if (moved && moved.from !== id) setBoard(moveCard(board, moved.id, id))
+        })
+        return section
       }),
     )
   }
 
-  function renderCard(card: Card): HTMLElement {
+  function endDrag(): void {
+    dragging = null
+    for (const el of boardEl.querySelectorAll('.dragging, .drop-target')) {
+      el.classList.remove('dragging', 'drop-target')
+    }
+  }
+
+  function moveByButton(card: Card, column: { id: ColumnId; title: string }): void {
+    setBoard(moveCard(board, card.id, column.id))
+    cardEls.get(card.id)?.li.focus()
+    statusEl.textContent = `Moved "${card.title}" to ${column.title}`
+  }
+
+  function renderCard(card: Card, from: ColumnId): HTMLElement {
     const edit = h('button', { type: 'button', 'aria-label': `Edit "${card.title}"` }, 'Edit')
     const del = h('button', { type: 'button', 'aria-label': `Delete "${card.title}"` }, 'Delete')
     edit.addEventListener('click', () => openForm(card))
     del.addEventListener('click', () => removeCard(card.id))
-    const li = h('li', { class: 'card', tabindex: '-1' }, h('h3', {}, card.title))
+    const moves = COLUMNS.filter((c) => c.id !== from).map((column) => {
+      const button = h(
+        'button',
+        { type: 'button', 'aria-label': `Move "${card.title}" to ${column.title}` },
+        h('span', { 'aria-hidden': 'true' }, '→ '),
+        column.title,
+      )
+      button.addEventListener('click', () => moveByButton(card, column))
+      return button
+    })
+    const li = h('li', { class: 'card', tabindex: '-1', draggable: 'true' }, h('h3', {}, card.title))
+    li.addEventListener('dragstart', (event) => {
+      if (!event.dataTransfer) return
+      event.dataTransfer.setData('text/plain', card.id) // Firefox needs data to start a drag
+      event.dataTransfer.effectAllowed = 'move'
+      dragging = { id: card.id, from }
+      li.classList.add('dragging')
+    })
+    li.addEventListener('dragend', endDrag)
     if (card.note) li.append(h('p', { class: 'note' }, card.note))
     // The due date is already YYYY-MM-DD; show it as is so no time zone can shift it.
     if (card.due) {
       li.append(h('p', { class: 'due' }, 'Due ', h('time', { datetime: card.due }, card.due)))
     }
-    li.append(h('div', { class: 'actions' }, edit, del))
+    li.append(h('div', { class: 'actions' }, edit, del, ...moves))
     cardEls.set(card.id, { li, edit })
     return li
   }
@@ -131,6 +224,28 @@ export function mountApp(root: HTMLElement): void {
     target?.focus()
   }
 
+  exportButton.addEventListener('click', () => {
+    const url = URL.createObjectURL(new Blob([serializeBoard(board)], { type: 'application/json' }))
+    const link = h('a', { href: url, download: `loopboard-${today()}.json` })
+    document.body.append(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  })
+  importInput.addEventListener('change', async () => {
+    const file = importInput.files?.[0]
+    if (!file) return
+    // Clear the input so choosing the same file again fires another change event.
+    importInput.value = ''
+    try {
+      const next = parseBoard(await file.text())
+      hideForm()
+      setBoard(next)
+    } catch (error) {
+      messageEl.textContent = `Import failed: ${error instanceof Error ? error.message : String(error)}`
+      messageEl.hidden = false
+    }
+  })
   addButton.addEventListener('click', () => openForm())
   cancelButton.addEventListener('click', closeForm)
   document.addEventListener('keydown', (event) => {
@@ -156,4 +271,5 @@ export function mountApp(root: HTMLElement): void {
   })
 
   render()
+  saveWarningEl.hidden = storage !== null
 }

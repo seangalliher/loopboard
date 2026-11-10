@@ -1,5 +1,8 @@
+import './styles.css'
+import { mountApp } from './ui/app'
+
 const app = document.querySelector<HTMLDivElement>('#app')
 
 if (app) {
-  app.textContent = 'LoopBoard'
+  mountApp(app)
 }

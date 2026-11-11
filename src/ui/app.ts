@@ -11,6 +11,7 @@ import type { Board, Card, ColumnId } from '../board/board'
 import { parseBoard, serializeBoard } from '../board/serialize'
 import { newId } from '../id'
 import { loadBoard, saveBoard } from '../storage'
+import { createThemeButton } from './theme'
 
 const COLUMNS: { id: ColumnId; title: string }[] = [
   { id: 'todo', title: 'To do' },
@@ -19,6 +20,9 @@ const COLUMNS: { id: ColumnId; title: string }[] = [
 ]
 
 type Child = Node | string
+
+/** Longest import error shown; the fixed notices area at 320px fits about this much text. */
+const MAX_MESSAGE_LENGTH = 120
 
 interface ColumnView {
   section: HTMLElement
@@ -94,6 +98,29 @@ export function mountApp(root: HTMLElement, storage: Storage | null): void {
     'Could not save the board in this browser. Export it to keep a copy.',
   )
   const statusEl = h('p', { class: 'visually-hidden', role: 'status' })
+  const mainEl = h('main', {}, form, boardEl)
+  // Fixed to the viewport, so showing or hiding a notice never moves anything else on the page.
+  const noticesEl = h('div', { class: 'notices' }, saveWarningEl, messageEl)
+
+  /** A newly shown notice can cover the focused control; scroll it up so the page's scroll padding keeps it clear. */
+  function keepFocusClearOfNotices(): void {
+    // Scrolling between a press and its click would move the target out from under the pointer.
+    if (pointerPressed) return
+    const active = document.activeElement
+    if (!(active instanceof HTMLElement) || !mainEl.contains(active)) return
+    if (active.getBoundingClientRect().bottom > noticesEl.getBoundingClientRect().top) {
+      active.scrollIntoView({ block: 'nearest' })
+    }
+  }
+
+  // True from a pointer press until just after the click it produces has been dispatched.
+  let pointerPressed = false
+  const releasePointer = (): void => void setTimeout(() => (pointerPressed = false), 0)
+  document.addEventListener('pointerdown', () => (pointerPressed = true), true)
+  for (const type of ['pointerup', 'pointercancel', 'dragend']) {
+    document.addEventListener(type, releasePointer, true)
+  }
+
   root.append(
     h(
       'header',
@@ -104,11 +131,13 @@ export function mountApp(root: HTMLElement, storage: Storage | null): void {
         { class: 'actions' },
         addButton,
         exportButton,
+        createThemeButton(storage),
         h('label', { for: importInput.id }, 'Import a board file (replaces the current board)'),
         importInput,
       ),
     ),
-    h('main', {}, saveWarningEl, messageEl, form, boardEl),
+    mainEl,
+    noticesEl,
     statusEl,
   )
 
@@ -122,12 +151,14 @@ export function mountApp(root: HTMLElement, storage: Storage | null): void {
     board = next
     render()
     messageEl.hidden = true
+    const warningWasHidden = saveWarningEl.hidden
     try {
       if (!storage) throw new Error('storage unavailable')
       saveBoard(storage, board)
       saveWarningEl.hidden = true
     } catch {
       saveWarningEl.hidden = false
+      if (warningWasHidden) keepFocusClearOfNotices()
     }
   }
 
@@ -322,8 +353,12 @@ export function mountApp(root: HTMLElement, storage: Storage | null): void {
       hideForm()
       setBoard(next)
     } catch (error) {
-      messageEl.textContent = `Import failed: ${error instanceof Error ? error.message : String(error)}`
+      const text = `Import failed: ${error instanceof Error ? error.message : String(error)}`
+      // Notices can't be scrolled by pointer, so keep the text short enough to fit the area.
+      messageEl.textContent = text.length > MAX_MESSAGE_LENGTH ? `${text.slice(0, MAX_MESSAGE_LENGTH - 1)}…` : text
+      const wasHidden = messageEl.hidden
       messageEl.hidden = false
+      if (wasHidden) keepFocusClearOfNotices()
     }
   })
   addButton.addEventListener('click', () => openForm())

@@ -1,4 +1,7 @@
-:root {
+/* The only place colours are written. index.html and theme.ts set data-theme to light or dark. */
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
   --color-bg: #f5f6f8;
   --color-surface: #ffffff;
   --color-text: #1b1f24;
@@ -8,10 +11,30 @@
   --color-accent-text: #ffffff;
   --color-danger: #b42318;
   --color-focus: #b45309;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-bg: #12151a;
+  --color-surface: #1c2128;
+  --color-text: #e6e8eb;
+  --color-muted: #a8b0bb;
+  --color-border: #4b5563;
+  --color-accent: #8ab4ff;
+  --color-accent-text: #0b1220;
+  --color-danger: #ff9b92;
+  --color-focus: #fbbf24;
+}
+
+:root {
   --radius: 0.5rem;
   --gap: 1rem;
+  --target: 2.75rem; /* the smallest height of anything clickable */
+  --notice-space: 14rem; /* the most height the fixed notices take, kept free below the page */
   font-family: system-ui, sans-serif;
   line-height: 1.4;
+  /* Keyboard focus scrolls a control above the fixed notices. */
+  scroll-padding-bottom: var(--notice-space);
 }
 
 *,
@@ -22,6 +45,7 @@
 
 body {
   margin: 0;
+  padding-bottom: var(--notice-space);
   background: var(--color-bg);
   color: var(--color-text);
 }
@@ -69,6 +93,7 @@ main {
 
 button {
   font: inherit;
+  min-height: var(--target);
   padding: 0.375rem 0.75rem;
   border: 0.0625rem solid var(--color-border);
   border-radius: var(--radius);
@@ -104,7 +129,8 @@ form {
 
 input,
 textarea {
-  font: inherit;
+  font: inherit; /* 1rem, so iOS does not zoom in on focus */
+  min-height: var(--target);
   padding: 0.375rem 0.5rem;
   border: 0.0625rem solid var(--color-border);
   border-radius: var(--radius);
@@ -112,10 +138,64 @@ textarea {
   color: var(--color-text);
 }
 
+input[type='file'] {
+  min-width: 0;
+  max-width: 100%;
+}
+
+header .actions {
+  max-width: 100%;
+}
+
+input[type='file']::file-selector-button {
+  min-height: calc(var(--target) - 1rem);
+  margin-right: 0.5rem;
+}
+
+/* The browser's own button colours (grey on hover) can fall below AA contrast, so use the palette. */
+input[type='file']::file-selector-button,
+input[type='file']::file-selector-button:hover,
+input[type='file']::file-selector-button:active,
+input[type='file']:focus-visible::file-selector-button {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+header label {
+  display: flex;
+  align-items: center;
+  min-height: var(--target);
+}
+
 .error {
   margin: 0;
   color: var(--color-danger);
   font-weight: 600;
+}
+
+/* Out of the page flow: appearing or disappearing moves nothing, and it stays in view when scrolled. */
+.notices {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  max-height: var(--notice-space);
+  overflow-y: auto;
+  /* Clicks go to the controls underneath, so a notice appearing mid-click never intercepts it. */
+  pointer-events: none;
+}
+
+.notices .error {
+  overflow-wrap: anywhere;
+  padding: 0.5rem var(--gap);
+  border-top: 0.125rem solid var(--color-danger);
+  background: var(--color-surface);
+  /* At most five lines, so wide text cannot make the notices taller than their area. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
+  overflow: hidden;
 }
 
 .actions {
@@ -126,9 +206,15 @@ textarea {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--gap);
   align-items: start;
+}
+
+@media (min-width: 56.25em) {
+  .board {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .column {
@@ -156,7 +242,6 @@ textarea {
 
 .wip-limit input {
   width: 4.5rem;
-  min-height: 2.75rem;
 }
 
 .column.over-limit {
@@ -209,7 +294,6 @@ textarea {
 }
 
 .card.dragging {
-  opacity: 0.5;
   border-style: dashed;
 }
 
